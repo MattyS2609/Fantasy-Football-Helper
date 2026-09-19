@@ -1,106 +1,98 @@
 # XGBoost Notes
 
-The API uses the explainable scorer by default. To enable a trained historical model, create a CSV with these columns:
+## What is available on GitHub?
 
-```text
-form,points_per_game,minutes,starts,expected_minutes,rotation_probability,goals,assists,clean_sheets,price,fixture_score,position,target_points_next_5
-```
+The GitHub repository contains the Python code needed to build and use the model, but it does not contain the trained model itself or the generated training data.
 
-Each row must contain only information available before the prediction gameweek. `target_points_next_5` is the player's actual points over the following five gameweeks.
+These items are intentionally ignored by Git:
 
-## Train and enable the model
+- `.venv/`: a local Python virtual environment that must be created per machine.
+- `historical-data/`: a locally cloned historical-data repository.
+- `data/`: generated training, evaluation, and squad-snapshot CSV files.
+- `models/`: generated model files such as `fpl_xgb.json`.
 
-```powershell
-New-Item -ItemType Directory -Force models
-.\\venv\\Scripts\\python.exe -m app.train_model historical.csv models\\fpl_xgb.json
-$env:FPL_MODEL_PATH = "$PWD\\models\\fpl_xgb.json"
-.\\venv\\Scripts\\python.exe -m uvicorn app.main:app --reload
-```
+This keeps the repository small and avoids treating generated or machine-specific files as source code. A fresh clone uses the explainable heuristic scorer unless a local model is created and selected with `FPL_MODEL_PATH`.
 
-Use season-based validation before enabling the model in live recommendations. The model is loaded only when `FPL_MODEL_PATH` exists; otherwise the current heuristic remains active.
+## Option 1: Rebuild the model
 
-When XGBoost is enabled, its prediction is used directly throughout the season. The basic heuristic is only used as a fallback when no trained model is available. XGBoost receives both individual previous-season performance and `current_gameweek`/`season_progress`, allowing it to learn how historical performance should interact with season progress without a separate manual fade.
+Run these commands from the project root in PowerShell.
 
-## Inspect feature importance
-
-To see which inputs the trained model relies on most:
+### 1. Create the local Python environment
 
 ```powershell
-.\\venv\\Scripts\\python.exe -m app.inspect_model `
-\tmodels\\fpl_xgb.json `
-\t--top 20 `
-\t--output data\\feature_importance.csv
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 ```
 
-The report uses XGBoost gain importance. `relative_importance` is the percentage of total tree gain attributed to each feature. This describes what the model uses to make splits; it does not prove that a feature causes higher predicted points.
+### 2. Download the historical source data
 
-To compare learned feature influence at different stages of the season:
-
-```powershell
-.\\venv\\Scripts\\python.exe -m app.inspect_model `
-\tmodels\\fpl_xgb.json `
-\t--data data\\historical.csv `
-\t--top 10 `
-\t--temporal-output data\\feature_importance_by_period.csv
-```
-
-This uses XGBoost prediction contributions and reports mean absolute contribution for GW1-5, GW6-10, GW11-20, GW21-30, and GW31-38. Compare the `relative_importance` of previous-season features across these periods to see whether the trained model actually reduces their influence.
-
-XGBoost also receives `current_gameweek` and `season_progress` as features. This lets it learn how the value of previous-season performance changes as more current-season evidence becomes available. The initial holdout result with these features was MAE `3.8873` and average transfer gain `6.7870`; the previous model scored MAE `3.8085` and average transfer gain `7.5970`, so this version should be treated as experimental until it is validated across more held-out seasons.
-
-## Build the historical CSV
-
-Download the historical repository, then point the builder at its `data` directory:
+The training-data builder expects season folders containing the historical repository's gameweek CSV files:
 
 ```powershell
 git clone --depth 1 https://github.com/vaastav/Fantasy-Premier-League.git historical-data
-.\\venv\\Scripts\\python.exe -m app.build_training_data `
-\t--data-root historical-data\\data `
-\t--seasons 2020-21 2021-22 2022-23 2023-24 2024-25 `
-\t--output data\\historical.csv
 ```
 
-The builder skips the opening gameweek of each season until prior-match features exist and skips the final five gameweeks because a complete target window is not available. Inspect `data\\historical.csv` before training the model.
+### 3. Build the training CSV
 
-## Evaluate before enabling
-
-Hold out a complete season so the model is tested on data it did not train on:
+Choose the seasons to use and write the generated CSV under the ignored `data/` directory:
 
 ```powershell
-.\\venv\\Scripts\\python.exe -m app.evaluate_model `
-\tdata\\historical.csv `
-\t--test-season 2024-25 `
-\t--report data\\evaluation_2024-25.csv
+New-Item -ItemType Directory -Force data
+python -m app.build_training_data `
+    --data-root historical-data\data `
+    --seasons 2020-21 2021-22 2022-23 2023-24 2024-25 `
+    --output data\historical.csv
 ```
 
-The evaluation compares XGBoost with a five-gameweek points-per-game baseline using mean absolute error, root mean squared error, and correlation. The first holdout run on `2024-25` produced MAE `3.7795` for XGBoost versus `4.0877` for the baseline, but transfer-level backtesting is still needed before treating that improvement as better FPL advice.
-
-The same command also writes `data\\evaluation_2024-25_transfers.csv`. The initial transfer backtest covered `22,577` held-out player-swap cases: XGBoost achieved an average actual gain of `7.0338` points and a positive-transfer rate of `75.19%`, compared with `6.6624` points and `73.84%` for the baseline. This first backtest checks individual same-position swaps with a zero-bank assumption; it does not yet simulate complete squads, free transfers, hits, or the three-player-per-club rule.
-
-For full squad-level backtesting, provide a CSV of historical squad snapshots with one row per squad player:
+The builder avoids rows without prior-match information and excludes the final five gameweeks when a complete five-gameweek target cannot be calculated. The resulting CSV must contain the model features and target used by `app.train_model`:
 
 ```text
-season,gameweek,player_id,starting,selling_price,bank
-2024-25,10,123,1,7.2,0.5
+form,points_per_game,minutes,starts,recent_minutes_3,recent_starts_3,recent_minutes_5,recent_starts_5,expected_minutes,rotation_probability,goals,assists,expected_goals,expected_assists,clean_sheets,clean_sheet_probability,price,fixture_score,fixture_congestion,team_strength,home_fixture_ratio,previous_season_points,previous_season_minutes,previous_season_starts,previous_season_points_per_90,previous_season_expected_goals,previous_season_expected_assists,previous_season_clean_sheets,current_gameweek,season_progress,position,target_points_next_5
 ```
 
-Run the squad simulation with:
+### 4. Train the XGBoost model
+
+Create the ignored `models/` directory and train a local model:
 
 ```powershell
-.\\venv\\Scripts\\python.exe -m app.evaluate_model `
-\tdata\\historical.csv `
-\t--test-season 2024-25 `
-\t--squads data\\squad_snapshots.csv `
-\t--report data\\evaluation_2024-25.csv
+New-Item -ItemType Directory -Force models
+python -m app.train_model data\historical.csv models\fpl_xgb.json
 ```
 
-This compares XGBoost, the baseline, and a no-transfer strategy while enforcing position, budget, and three-player-per-club constraints. The historical repository does not include manager squad snapshots, so the squad CSV must come from an FPL manager export or a separately collected dataset.
+### 5. Run the API with the model enabled
 
-Collect a snapshot of your current team after each gameweek with:
+Set the model path for the current PowerShell session, then start the API:
 
 ```powershell
-.\\venv\\Scripts\\python.exe -m app.collect_squad_snapshot 6377026 `
-\t--output data\\squad_snapshots.csv
+$env:FPL_MODEL_PATH = "$PWD\models\fpl_xgb.json"
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The command appends 15 rows for the current gameweek. Run it once per gameweek, after making any transfers. Past seasons cannot be reconstructed from the public API, so these snapshots build the dataset for future backtests.
+When `FPL_MODEL_PATH` is unset or points to a missing file, the API falls back to the default heuristic scorer.
+
+## Validate before using
+
+Evaluate against a held-out season before using the rebuilt model for recommendations:
+
+```powershell
+python -m app.evaluate_model `
+    data\historical.csv `
+    --test-season 2024-25 `
+    --report data\evaluation_2024-25.csv
+```
+
+The evaluation output is generated locally under `data/`. Do not treat one holdout result as proof that the model gives better FPL advice; validate across additional seasons where possible.
+
+To inspect model feature importance:
+
+```powershell
+python -m app.inspect_model `
+    models\fpl_xgb.json `
+    --top 20 `
+    --output data\feature_importance.csv
+```
+
+## Option 2: Request a demo
+
+Rebuilding requires downloading the historical source data and may not reproduce the exact model previously trained by the project owner. If you only need to see the existing model in operation, contact the project owner to request a demo or access to the existing local model. The model file is not available in the public GitHub repository.

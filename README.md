@@ -53,19 +53,9 @@ The frontend is designed to call the backend API from the local FastAPI server.
 
 ### 3) Optional: enable the trained ML model
 
-The trained XGBoost model and its generated training data are not included in GitHub because they are local, generated artifacts rather than required source code. They are ignored by Git so the repository stays lightweight and the model can be rebuilt from the available data.
+The trained XGBoost model and its generated training data are not included in GitHub because they are local, generated artifacts rather than required source code. They are ignored by Git so the repository stays lightweight.
 
-To train one locally:
-
-```powershell
-New-Item -ItemType Directory -Force models
-\.venv\Scripts\python.exe -m app.build_training_data --data-root historical-data\data --output data\historical.csv
-\.venv\Scripts\python.exe -m app.train_model data\historical.csv models\fpl_xgb.json
-$env:FPL_MODEL_PATH = "$PWD\models\fpl_xgb.json"
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-The API automatically uses the model when `FPL_MODEL_PATH` points to it; otherwise it uses the default heuristic scorer. See [XGBoostNotes.md](XGBoostNotes.md) for the required data format, feature inspection, validation, and backtesting details.
+See [XGBoostNotes.md](XGBoostNotes.md) for instructions to rebuild a model, enable it locally, validate it, or request a demo of the existing model from the project owner. Without a local model, the API uses the default heuristic scorer.
 
 ### Notes
 
