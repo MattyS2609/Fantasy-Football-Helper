@@ -1,0 +1,32 @@
+# Python / virtual environments
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.pytype/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Environment and secrets
+.env
+.env.*
+
+# Local editor tooling
+.vscode/
+.idea/
+
+# Generated project artifacts
+historical-data/
+data/
+models/
+!models/.gitkeep
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
