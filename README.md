@@ -2,6 +2,11 @@
 
 A first-pass FPL transfer recommendation API. It reads a public FPL team, evaluates affordable single-player replacements, and returns the five highest-scoring transfers over the next five gameweeks.
 
+## Demo
+Watch the FPL Transfer Recommender generate player transfer recommendations for a Fantasy Premier League team:
+[▶ Watch the Demo](https://github.com/user-attachments/assets/e74204b5-5411-4a20-8e7f-bd5818f68bd9)
+
+
 ## Setup
 
 ```powershell
